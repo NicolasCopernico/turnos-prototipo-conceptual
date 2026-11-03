@@ -464,3 +464,23 @@ La validación y la inserción ocurren en una única transacción (INV-03).
 | 0.1.0 | 2026-10-26 | Versión inicial del MVP. |
 | 0.2.1 | 2026-10-27 | Se agrega `INVALID_REQUEST` (422) al catálogo §7 y se usa en §11.1. |
 | 0.2.0 | 2026-10-27 | Alias `INV-01`/`INV-02` (texto inmutable); nueva `INV-03` (persistencia real); contrato REST de `/api/turnos` (§11); directiva de abstención (§12); decisiones D-04 (resuelta para Fase 2) y D-06; criterios de aceptación 9 a 11. |
+
+---
+
+## 14. Matriz de Tests Automatizados
+
+Suite `pytest` en `tests/test_turnos.py`. Cada test corre sobre una base SQLite temporal (fixture `client`, `tmp_path`), por lo que nunca toca `turnos.db`. Ejecución: `python -m pytest` (ver `pytest.ini`).
+
+| # | Test | Regla | Escenario (Given/When/Then) | Resultado esperado |
+|---|---|---|---|---|
+| 1 | `test_crear_turno_valido_aparece_en_el_listado` | INV-03 (camino feliz) | *Dado* un cliente verificado y un servicio activo, *cuando* se crea un turno para mañana con `POST /api/turnos`, *entonces* luego aparece en `GET /api/turnos`. | `201` con estado `CONFIRMADO`; el listado contiene el turno. |
+| 2 | `test_segundo_turno_en_mismo_horario_es_rechazado` | INV-02 (RN-02) | *Dado* un turno confirmado, *cuando* otro cliente reserva el mismo servicio en la misma fecha y hora, *entonces* el segundo se rechaza. | `409 SLOT_UNAVAILABLE`; solo existe 1 turno. |
+| 3 | `test_cancelar_con_cinco_horas_de_anticipacion_funciona` | INV-01 (RN-01), caso permitido | *Dado* un turno que empieza en 5 h, *cuando* el cliente lo cancela con `POST /api/turnos/{id}/cancelar`, *entonces* se cancela. | `200` con estado `CANCELADO`. |
+| 4 | `test_cancelar_a_45_minutos_es_rechazado` | INV-01 (RN-01), caso bloqueado | *Dado* un turno al que le faltan 45 min, *cuando* el cliente intenta cancelarlo, *entonces* se rechaza y el turno sigue vigente. | `409 CANCELLATION_WINDOW_EXPIRED`; estado sigue `CONFIRMADO`. |
+| 5 | `test_post_con_datos_invalidos_es_rechazado` (5 casos) | §7 `INVALID_REQUEST` (validación Pydantic) | *Dado* un cuerpo sin campos, sin `inicio`, sin `cliente_id`, con fecha no parseable o con `cliente_id` numérico, *cuando* se envía `POST /api/turnos`, *entonces* se rechaza sin persistir nada. | `422 INVALID_REQUEST`; el listado queda vacío. |
+
+**Notas**
+
+- Test 4: RN-04 exige 1 h de antelación mínima, por lo que un turno a 45 min no puede crearse por la API. El test crea el turno con anticipación suficiente y adelanta el reloj del servidor (`main.utcnow`) hasta 45 min antes del inicio.
+- Tests 1 a 3 usan horarios relativos a la hora actual y alineados a la grilla de 15 min (RN-04), así que no dependen de la fecha en que se ejecuten.
+- Correspondencia con §8: Test 1 ↔ criterio 9 (parcial: sin reinicio del backend), Test 2 ↔ criterio 1, Test 3 ↔ criterio 4, Test 4 ↔ criterios 5 y 11. Sin cubrir aún: criterios 2, 3, 6, 7 (y 8, 10 fuera de alcance).

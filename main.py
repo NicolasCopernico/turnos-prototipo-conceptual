@@ -23,7 +23,7 @@ from typing import AsyncIterator, Iterator, Optional
 from fastapi import FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 # ----------------------------------------------------------------------------
@@ -339,6 +339,11 @@ async def domain_error_handler(_: Request, exc: DomainError) -> JSONResponse:
 async def validation_error_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
     detail = "; ".join(f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in exc.errors())
     return JSONResponse(status_code=422, content={"error": "INVALID_REQUEST", "detalle": detail})
+
+
+@app.get("/", include_in_schema=False)
+def raiz() -> FileResponse:
+    return FileResponse(Path(__file__).parent / "prototipo-turnos.html", media_type="text/html")
 
 
 @app.get("/api/turnos", response_model=list[TurnoOut])
