@@ -2,10 +2,11 @@
 
 | Campo | Valor |
 |---|---|
-| Versión | 0.1.0 (MVP) |
+| Versión | 0.2.0 (MVP · Fase 2: arquitectura desacoplada) |
 | Estado | Borrador para revisión |
 | Metodología | Spec-Driven Development (SDD) |
-| Fecha | 2026-10-26 |
+| Fecha | 2026-10-27 |
+| Versión anterior | 0.1.0 (2026-10-26). Cambios en la sección 12 |
 
 > Este documento es el **contrato del sistema**. Todo código, test y decisión de diseño debe poder trazarse a una sección de este archivo. Si el código y la spec divergen, se corrige primero la spec y luego el código.
 
@@ -105,6 +106,16 @@ Leyenda: ✅ permitido · ❌ prohibido · 🔒 solo sobre recursos propios
 
 Las siguientes reglas son **no negociables**: se validan en el backend, y la base de datos DEBE reforzarlas con restricciones cuando sea técnicamente posible. Ninguna regla puede ser omitida por la UI ni por un rol (salvo excepción explícita indicada).
 
+### Identificadores de invariantes
+
+Desde la v0.2.0 las tres reglas que gobiernan la Fase 2 también se citan como `INV-xx`. Los identificadores `RN-xx` **no cambian** y siguen siendo válidos en todo el documento.
+
+| Invariante | Regla | Estado en v0.2.0 |
+|---|---|---|
+| **INV-01** | Ventana mínima de cancelación (≥ 2 h) = [RN-01](#rn-01--ventana-mínima-de-cancelación) | **Inmutable**, texto sin cambios |
+| **INV-02** | Prohibición de solapamiento = [RN-02](#rn-02--prohibición-de-doble-reserva-y-solapamiento) | **Inmutable**, texto sin cambios |
+| **INV-03** | Persistencia real = [INV-03](#inv-03--persistencia-real) | **Nueva** |
+
 ### RN-01 — Ventana mínima de cancelación
 
 - Un `CLIENTE` NO DEBE cancelar un turno si faltan **menos de 2 horas** para su `inicio`.
@@ -167,6 +178,16 @@ Estados: `CONFIRMADO` → `CANCELADO` | `COMPLETADO` | `AUSENTE`.
 ### RN-08 — Trazabilidad
 
 - Toda creación, cancelación y cambio de estado DEBE registrar: actor, rol, instante UTC y motivo (si aplica) en un log de auditoría inmutable.
+
+### INV-03 — Persistencia real
+
+- Todo turno DEBE persistir de forma **atómica** en una base de datos relacional. La creación y la cancelación de un turno son transacciones de todo o nada: ante un fallo no queda ningún cambio parcial.
+- Un turno confirmado o cancelado DEBE **sobrevivir al reinicio** del sistema (backend y base de datos) sin pérdida de datos.
+- El estado de los turnos NO DEBE residir únicamente en memoria volátil (variables de proceso ni estado del navegador). La base de datos es la única fuente de verdad.
+- Toda operación que cambie un turno DEBE confirmarse (`COMMIT`) antes de responder éxito al cliente HTTP. Si la transacción falla, el sistema responde error y no persiste nada.
+- La atomicidad aplica también a la verificación de INV-02: comprobar el solapamiento y escribir el turno ocurren dentro de la misma transacción.
+- El esquema relacional DEBE limitarse a las entidades y atributos de la sección 4. No se agregan tablas ni campos que no figuren allí sin antes versionar esta spec.
+- Respuesta ante fallo de persistencia: error `PERSISTENCE_ERROR` (HTTP 500). La respuesta no expone detalles internos de la base de datos.
 
 ---
 
@@ -295,6 +316,8 @@ erDiagram
     }
 ```
 
+> **v0.2.0:** el modelo de datos de esta sección **no cambia**. Es el único origen permitido de entidades y campos para la base de datos y para la API de la sección 11.
+
 ### 4.3 Invariantes de integridad referencial
 
 - `Turno.profesional_id` DEBE coincidir con `Servicio.profesional_id` del `servicio_id` asociado.
@@ -340,6 +363,7 @@ Alcance: el `PROFESIONAL` ve solo las suyas; el `ADMIN` ve las globales y por pr
 | `INVALID_STATE_TRANSITION` | 409 | RN-06 |
 | `SERVICE_HAS_ACTIVE_BOOKINGS` | 409 | RN-07 |
 | `FORBIDDEN` / `NOT_FOUND` | 403 / 404 | RBAC-01, RBAC-02 |
+| `PERSISTENCE_ERROR` | 500 | INV-03 |
 
 ---
 
@@ -353,6 +377,9 @@ Alcance: el `PROFESIONAL` ve solo las suyas; el `ADMIN` ve las globales y por pr
 6. **Contacto inválido**: *Dado* un cliente sin teléfono válido, *cuando* intenta reservar, *entonces* `INVALID_CONTACT`.
 7. **Aislamiento**: *Dado* el turno T del cliente A, *cuando* el cliente B consulta T, *entonces* recibe `404`.
 8. **Bloqueo con conflicto**: *Dado* un turno confirmado dentro de un rango, *cuando* el profesional intenta bloquearlo sin confirmar, *entonces* el sistema lista los conflictos y no crea el bloqueo.
+9. **Supervivencia al reinicio (INV-03)**: *Dado* un turno creado con `POST /api/turnos` y respondido `201`, *cuando* se reinicia el backend, *entonces* `GET /api/turnos` lo devuelve con los mismos datos.
+10. **Atomicidad (INV-03)**: *Dado* un fallo durante la escritura de un turno, *entonces* el sistema responde error y `GET /api/turnos` no muestra ningún turno parcial.
+11. **Persistencia de la cancelación (INV-03)**: *Dado* un turno cancelado con `POST /api/turnos/{id}/cancelar`, *cuando* se reinicia el backend, *entonces* el turno sigue en estado `CANCELADO` y el slot sigue libre.
 
 ---
 
@@ -363,8 +390,10 @@ Alcance: el `PROFESIONAL` ve solo las suyas; el `ADMIN` ve las globales y por pr
 | D-01 | ¿Un cliente puede tener límite de turnos activos simultáneos? | Sin límite en MVP |
 | D-02 | ¿Los Profesionales pueden ser dados de alta por auto-registro? | No, solo vía `ADMIN` |
 | D-03 | ¿Política de cancelaciones reiteradas / penalización? | Fuera del MVP |
-| D-04 | Stack tecnológico y motor de BD (requiere soporte de exclusión de rangos) | PostgreSQL |
+| D-04 | Stack tecnológico y motor de BD (requiere soporte de exclusión de rangos) | ~~PostgreSQL~~ **Resuelta en v0.2.0:** Python + FastAPI y SQLite (`turnos.db`). Ver [plan.md](plan.md) |
 | D-05 | ¿Confirmación automática o aprobación manual del profesional? | Automática |
+| D-06 | ¿Cómo se identifica al actor en la API de la Fase 2, si el login (F-01) no está implementado? | El actor se declara con campos existentes de `Turno` (`cliente_id`, `cancelado_por_id`) y el backend resuelve su `rol` desde `Usuario`. La autenticación real queda fuera de la Fase 2 |
+| D-07 | ¿Qué endpoints expone la Fase 2 además de los 3 de la sección 11? | Ninguno. Servicios, bloqueos y métricas siguen fuera de la API en esta fase |
 
 ---
 
@@ -372,8 +401,112 @@ Alcance: el `PROFESIONAL` ve solo las suyas; el `ADMIN` ve las globales y por pr
 
 | Spec | Código (a completar) | Test (a completar) |
 |---|---|---|
-| RN-01 | — | Criterios 4, 5 |
-| RN-02 | — | Criterios 1, 2, 3 |
-| RN-03 | — | Criterio 6 |
-| RBAC-02 | — | Criterio 7 |
-| RN-05 | — | Criterio 8 |
+| RN-01 / INV-01 | `POST /api/turnos/{id}/cancelar` | Criterios 4, 5 |
+| RN-02 / INV-02 | `POST /api/turnos` | Criterios 1, 2, 3 |
+| RN-03 | `POST /api/turnos` | Criterio 6 |
+| INV-03 | `GET /api/turnos`, `POST /api/turnos`, `POST /api/turnos/{id}/cancelar` | Criterios 9, 10, 11 |
+| RBAC-02 | `GET /api/turnos`, `POST /api/turnos/{id}/cancelar` | Criterio 7 |
+| RN-05 | — (fuera de la API en la Fase 2) | Criterio 8 |
+
+---
+
+## 11. Contrato de API REST (Fase 2)
+
+Este contrato gobierna el Backend. Las únicas entidades y campos permitidos son los de la sección 4.
+
+### 11.1 Convenciones
+
+- Base: `http://localhost:8000`. Prefijo `/api`. Formato: JSON (`application/json`, UTF-8).
+- Los nombres de campo del JSON son **idénticos** a los atributos de `Turno` de la sección 4.1.
+- Los instantes (`inicio`, `fin`, `creado_en`, `actualizado_en`) viajan en **ISO 8601 UTC** (por ejemplo `2026-11-03T13:00:00Z`).
+- El backend DEBE habilitar CORS para que el Frontend pueda consumir la API desde otro origen.
+- Los errores usan el catálogo de la sección 7 con este cuerpo:
+
+```json
+{ "error": { "codigo": "SLOT_UNAVAILABLE", "mensaje": "El horario ya no está disponible." } }
+```
+
+- Identificación del actor: ver D-06. `rol` nunca viaja en la petición; el backend lo obtiene de `Usuario.rol`.
+
+### 11.2 Recurso `Turno` (representación)
+
+| Campo | Tipo JSON | Origen |
+|---|---|---|
+| `id` | string (UUID) | `Turno.id` |
+| `cliente_id` | string (UUID) | `Turno.cliente_id` |
+| `profesional_id` | string (UUID) | `Turno.profesional_id` |
+| `servicio_id` | string (UUID) | `Turno.servicio_id` |
+| `inicio` | string (ISO 8601 UTC) | `Turno.inicio` |
+| `fin` | string (ISO 8601 UTC) | `Turno.fin` |
+| `estado` | string | `Turno.estado`: `CONFIRMADO` \| `CANCELADO` \| `COMPLETADO` \| `AUSENTE` |
+| `motivo_cancelacion` | string \| null | `Turno.motivo_cancelacion` |
+| `cancelado_por_id` | string (UUID) \| null | `Turno.cancelado_por_id` |
+| `creado_en` | string (ISO 8601 UTC) | `Turno.creado_en` |
+| `actualizado_en` | string (ISO 8601 UTC) | `Turno.actualizado_en` |
+
+### 11.3 `GET /api/turnos` — listar turnos
+
+| Aspecto | Definición |
+|---|---|
+| Propósito | Devolver los turnos persistidos (INV-03). |
+| Parámetros de consulta (opcionales) | `cliente_id`, `profesional_id`, `estado`. Todos son atributos de `Turno`; se combinan con AND. |
+| Respuesta `200` | Arreglo JSON de `Turno`, ordenado por `inicio` ascendente. Vacío (`[]`) si no hay resultados. |
+| Errores | `422` si `estado` está fuera del enum de RN-06. `500 PERSISTENCE_ERROR`. |
+| Autorización | RBAC-02 y RBAC-04: un `CLIENTE` solo recibe sus propios turnos (se filtra por su `cliente_id`). |
+
+### 11.4 `POST /api/turnos` — crear reserva
+
+| Aspecto | Definición |
+|---|---|
+| Propósito | Crear un turno `CONFIRMADO` (RN-06) aplicando INV-02, RN-03 y RN-04. |
+| Cuerpo | `cliente_id` (obligatorio), `servicio_id` (obligatorio), `inicio` (obligatorio). |
+| Prohibido en el cuerpo | `fin` (RN-04: lo calcula el servidor), `profesional_id` (se toma de `Servicio.profesional_id`, sección 4.3), `estado`, `id` y marcas de tiempo. |
+| Respuesta `201` | El `Turno` creado, con `estado = CONFIRMADO` y `fin = inicio + duracion_min`. Cabecera `Location: /api/turnos/{id}`. |
+| Atomicidad | La verificación de INV-02 y la inserción ocurren en **una sola transacción** (INV-03). |
+
+Errores:
+
+| Código | HTTP | Condición |
+|---|---|---|
+| `SLOT_UNAVAILABLE` | 409 | Solapamiento con otro turno `CONFIRMADO`, con un bloqueo, o fuera del horario laboral (RN-02). |
+| `INVALID_CONTACT` | 422 | Datos de contacto del cliente ausentes o inválidos (RN-03). |
+| `EMAIL_NOT_VERIFIED` | 403 | `Usuario.email_verificado = false` (RN-03). |
+| `INVALID_TIME_RANGE` | 422 | `inicio` no futuro, sin antelación mínima, fuera de la grilla o fuera del horizonte (RN-04). |
+| `NOT_FOUND` | 404 | `cliente_id` o `servicio_id` inexistente, o servicio inactivo. |
+| `PERSISTENCE_ERROR` | 500 | Falla la transacción (INV-03). No queda ningún cambio parcial. |
+
+### 11.5 `POST /api/turnos/{id}/cancelar` — cancelar reserva
+
+| Aspecto | Definición |
+|---|---|
+| Propósito | Pasar un turno de `CONFIRMADO` a `CANCELADO` (RN-06) aplicando INV-01. |
+| Parámetro de ruta | `id`: `Turno.id`. |
+| Cuerpo | `cancelado_por_id` (obligatorio). `motivo_cancelacion` (obligatorio si el actor es `PROFESIONAL` o `ADMIN`; opcional si es `CLIENTE`). |
+| Respuesta `200` | El `Turno` actualizado: `estado = CANCELADO`, con `cancelado_por_id`, `motivo_cancelacion` y `actualizado_en`. El slot queda libre (RN-02). |
+| Atomicidad | La lectura del estado, la verificación de INV-01 y la actualización ocurren en **una sola transacción** (INV-03). |
+
+Errores:
+
+| Código | HTTP | Condición |
+|---|---|---|
+| `CANCELLATION_WINDOW_EXPIRED` | 409 | Actor `CLIENTE` y faltan menos de `CANCELLATION_WINDOW_HOURS` (default 2) para `inicio`, o el turno ya inició (INV-01). |
+| `INVALID_STATE_TRANSITION` | 409 | El turno no está `CONFIRMADO` (RN-06). |
+| `INVALID_CONTACT` | 422 | Actor `PROFESIONAL`/`ADMIN` sin `motivo_cancelacion` (RN-01, excepción). |
+| `NOT_FOUND` | 404 | El turno no existe, o es ajeno al actor `CLIENTE` (RBAC-02). |
+| `FORBIDDEN` | 403 | El actor no tiene rol con permiso de cancelar este turno (matriz 2.2). |
+| `PERSISTENCE_ERROR` | 500 | Falla la transacción (INV-03). |
+
+El cuerpo de ejemplo para un `CLIENTE` es `{ "cancelado_por_id": "<UUID del cliente>" }`.
+
+### 11.6 Fuera del contrato de la Fase 2
+
+No se definen en esta versión: endpoints de usuarios, servicios, horarios laborales, bloqueos, métricas, auditoría ni autenticación (D-07). Los datos de `Usuario`, `Servicio`, `HorarioLaboral` y `Bloqueo` necesarios para validar las reglas se cargan en la base de datos de forma inicial (ver [plan.md](plan.md)).
+
+---
+
+## 12. Historial de versiones
+
+| Versión | Fecha | Cambios |
+|---|---|---|
+| 0.1.0 | 2026-10-26 | Spec inicial del MVP: alcance, RBAC, RN-01 a RN-08, modelo de datos, métricas, errores y criterios. |
+| 0.2.0 | 2026-10-27 | Se agregan los alias `INV-01` (= RN-01) e `INV-02` (= RN-02), sin tocar su texto. Se incorpora **INV-03 (Persistencia real)**. Se agrega el error `PERSISTENCE_ERROR`. Se resuelve D-04 (FastAPI + SQLite) y se abren D-06 y D-07. Se agrega la sección 11 (contrato REST) y los criterios 9 a 11. El modelo de datos de la sección 4 no cambia. |
