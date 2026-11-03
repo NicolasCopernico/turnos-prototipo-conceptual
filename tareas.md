@@ -187,3 +187,13 @@ F4 y F5 pueden avanzar en paralelo una vez cerrada la Fase 3, porque ambas consu
 
 - [x] B4.1 `prototipo-turnos.html` consume la API con `fetch` (plan §2): `cargarTurnos()` (GET), reserva (POST) y cancelación (POST `/cancelar`); errores 409 mostrados con el motivo del backend. _(Verificado: tras F5 los turnos persisten.)_
 - [ ] B4.2 Pendiente (en el frontend esas acciones responden `BACKEND_PENDIENTE`: completar, ausente, cancelar por bloqueo): endpoints de la vista Administrador (requiere ampliar el spec).
+
+## Fase B5 — Calidad: entorno, tests y refactorización
+
+- [x] B5.1 Entorno reproducible: `requirements.txt` (fastapi, uvicorn, pydantic, pytest, httpx), `.gitignore` profesional y entorno virtual `.venv/` con las dependencias instaladas.
+- [x] B5.2 Suite de testing `pytest` (`tests/test_turnos.py`, `pytest.ini`): base SQLite temporal por test (nunca toca `turnos.db`), 5 escenarios obligatorios (camino feliz/INV-03, INV-02, INV-01 a 5 h y a 45 min, validación Pydantic). Documentados en spec §14.
+- [x] B5.3 Blindaje de casos de borde: textos vacíos o en blanco → `422 INVALID_REQUEST`; cancelar turno inexistente → `404 NOT_FOUND`; cancelar turno ya cancelado → `409 INVALID_STATE_TRANSITION`. Con tests (17 en total).
+- [x] B5.4 Refactorización de `main.py` sin cambiar rutas: secciones ordenadas, docstrings, nombres de funciones de dominio en español (`registrar_turno`, `registrar_cancelacion`, `validar_contacto`, ...) y descripciones, ejemplos y respuestas de error en Swagger UI (`/docs`).
+- [x] B5.5 Demostración de detección de regresiones: invertir el signo de INV-01 hace fallar los tests de cancelación (revertido).
+
+**Hecho cuando:** `python -m pytest` pasa en verde en menos de 2 segundos.

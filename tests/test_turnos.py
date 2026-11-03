@@ -119,3 +119,38 @@ def test_post_con_datos_invalidos_es_rechazado(client, cuerpo):
     assert resp.status_code == 422
     assert resp.json()["error"] == "INVALID_REQUEST"
     assert client.get("/api/turnos").json() == []
+
+
+# --- Test 6: casos de borde, textos vacíos o solo espacios ------------------
+@pytest.mark.parametrize("campo", ["cliente_id", "servicio_id"])
+@pytest.mark.parametrize("valor", ["", "   ", "\t\n"])
+def test_crear_turno_con_texto_vacio_o_en_blanco_es_rechazado(client, campo, valor):
+    cuerpo = {"cliente_id": CLIENTE_1, "servicio_id": SERVICIO_30MIN, "inicio": iso(proximo_slot(timedelta(days=1)))}
+    cuerpo[campo] = valor
+
+    resp = client.post("/api/turnos", json=cuerpo)
+
+    assert resp.status_code == 422  # validación de esquema, no un 404 por "cliente inexistente"
+    assert resp.json()["error"] == "INVALID_REQUEST"
+    assert client.get("/api/turnos").json() == []
+
+
+# --- Test 7: casos de borde, cancelar un turno inexistente ------------------
+def test_cancelar_turno_inexistente_devuelve_404(client):
+    resp = cancelar(client, "id-que-no-existe")
+
+    assert resp.status_code == 404
+    assert resp.json()["error"] == "NOT_FOUND"
+
+
+# --- Test 8: casos de borde, cancelar un turno ya cancelado -----------------
+def test_cancelar_turno_ya_cancelado_es_rechazado(client):
+    turno = crear(client, proximo_slot(timedelta(hours=5))).json()
+    assert cancelar(client, turno["id"]).status_code == 200
+
+    segunda = cancelar(client, turno["id"])
+
+    assert segunda.status_code in (400, 409)
+    assert segunda.status_code == 409
+    assert segunda.json()["error"] == "INVALID_STATE_TRANSITION"
+    assert client.get("/api/turnos").json()[0]["estado"] == "CANCELADO"

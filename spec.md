@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| Versión | 0.2.1 (MVP · Fase 2: arquitectura desacoplada) |
+| Versión | 0.2.2 (MVP · Fase 2: arquitectura desacoplada) |
 | Estado | Borrador para revisión |
 | Metodología | Spec-Driven Development (SDD) |
 | Fecha | 2026-10-27 |
@@ -423,6 +423,7 @@ Los datos provienen siempre de la base (INV-03), nunca de caché en memoria del 
 | `409 SLOT_UNAVAILABLE` | Solapamiento con otro turno `CONFIRMADO` del profesional o del cliente (INV-02) |
 | `422 INVALID_TIME_RANGE` | `inicio` no futuro, sin la antelación mínima, fuera de grilla o del horizonte (RN-04) |
 | `422 INVALID_CONTACT` / `403 EMAIL_NOT_VERIFIED` | Datos de contacto del cliente inválidos o email sin verificar (RN-03) |
+| `422 INVALID_REQUEST` | Cuerpo mal formado: campo faltante, tipo inválido, o `cliente_id`/`servicio_id` vacío o compuesto solo por espacios |
 | `404 NOT_FOUND` | `cliente_id` o `servicio_id` inexistente |
 
 La validación y la inserción ocurren en una única transacción (INV-03).
@@ -462,6 +463,7 @@ La validación y la inserción ocurren en una única transacción (INV-03).
 | Versión | Fecha | Cambios |
 |---|---|---|
 | 0.1.0 | 2026-10-26 | Versión inicial del MVP. |
+| 0.2.2 | 2026-11-03 | §11.2: se explicita que los identificadores vacíos o solo espacios responden `422 INVALID_REQUEST` (antes caían en `404 NOT_FOUND`). §14: matriz de tests automatizados. |
 | 0.2.1 | 2026-10-27 | Se agrega `INVALID_REQUEST` (422) al catálogo §7 y se usa en §11.1. |
 | 0.2.0 | 2026-10-27 | Alias `INV-01`/`INV-02` (texto inmutable); nueva `INV-03` (persistencia real); contrato REST de `/api/turnos` (§11); directiva de abstención (§12); decisiones D-04 (resuelta para Fase 2) y D-06; criterios de aceptación 9 a 11. |
 
@@ -469,7 +471,7 @@ La validación y la inserción ocurren en una única transacción (INV-03).
 
 ## 14. Matriz de Tests Automatizados
 
-Suite `pytest` en `tests/test_turnos.py`. Cada test corre sobre una base SQLite temporal (fixture `client`, `tmp_path`), por lo que nunca toca `turnos.db`. Ejecución: `python -m pytest` (ver `pytest.ini`).
+Suite `pytest` en `tests/test_turnos.py` (17 casos: escenarios 1 a 5 de la matriz, más los casos de borde 6 a 8). Cada test corre sobre una base SQLite temporal (fixture `client`, `tmp_path`), por lo que nunca toca `turnos.db`. Ejecución: `python -m pytest` (ver `pytest.ini`).
 
 | # | Test | Regla | Escenario (Given/When/Then) | Resultado esperado |
 |---|---|---|---|---|
@@ -478,9 +480,13 @@ Suite `pytest` en `tests/test_turnos.py`. Cada test corre sobre una base SQLite 
 | 3 | `test_cancelar_con_cinco_horas_de_anticipacion_funciona` | INV-01 (RN-01), caso permitido | *Dado* un turno que empieza en 5 h, *cuando* el cliente lo cancela con `POST /api/turnos/{id}/cancelar`, *entonces* se cancela. | `200` con estado `CANCELADO`. |
 | 4 | `test_cancelar_a_45_minutos_es_rechazado` | INV-01 (RN-01), caso bloqueado | *Dado* un turno al que le faltan 45 min, *cuando* el cliente intenta cancelarlo, *entonces* se rechaza y el turno sigue vigente. | `409 CANCELLATION_WINDOW_EXPIRED`; estado sigue `CONFIRMADO`. |
 | 5 | `test_post_con_datos_invalidos_es_rechazado` (5 casos) | §7 `INVALID_REQUEST` (validación Pydantic) | *Dado* un cuerpo sin campos, sin `inicio`, sin `cliente_id`, con fecha no parseable o con `cliente_id` numérico, *cuando* se envía `POST /api/turnos`, *entonces* se rechaza sin persistir nada. | `422 INVALID_REQUEST`; el listado queda vacío. |
+| 6 | `test_crear_turno_con_texto_vacio_o_en_blanco_es_rechazado` (6 casos) | §11.2 `INVALID_REQUEST` (borde) | *Dado* un `cliente_id` o `servicio_id` igual a `""`, `"   "` o `"	
+"`, *cuando* se envía `POST /api/turnos`, *entonces* se rechaza antes de buscar en la base. | `422 INVALID_REQUEST` (no `404`); el listado queda vacío. |
+| 7 | `test_cancelar_turno_inexistente_devuelve_404` | §11.3 `NOT_FOUND` (borde) | *Dado* un id que no existe, *cuando* se hace `POST /api/turnos/{id}/cancelar`, *entonces* se informa que no existe. | `404 NOT_FOUND`. |
+| 8 | `test_cancelar_turno_ya_cancelado_es_rechazado` | RN-06 (borde) | *Dado* un turno ya `CANCELADO`, *cuando* se intenta cancelar de nuevo, *entonces* se rechaza (estado terminal). | `409 INVALID_STATE_TRANSITION`; el turno sigue `CANCELADO`. |
 
 **Notas**
 
 - Test 4: RN-04 exige 1 h de antelación mínima, por lo que un turno a 45 min no puede crearse por la API. El test crea el turno con anticipación suficiente y adelanta el reloj del servidor (`main.utcnow`) hasta 45 min antes del inicio.
 - Tests 1 a 3 usan horarios relativos a la hora actual y alineados a la grilla de 15 min (RN-04), así que no dependen de la fecha en que se ejecuten.
-- Correspondencia con §8: Test 1 ↔ criterio 9 (parcial: sin reinicio del backend), Test 2 ↔ criterio 1, Test 3 ↔ criterio 4, Test 4 ↔ criterios 5 y 11. Sin cubrir aún: criterios 2, 3, 6, 7 (y 8, 10 fuera de alcance).
+- Correspondencia con §8: Test 1 ↔ criterio 9 (parcial: sin reinicio del backend), Test 2 ↔ criterio 1, Test 3 ↔ criterio 4, Test 4 ↔ criterios 5 y 11. Los Tests 6 a 8 cubren casos de borde de §11.2, §11.3 y RN-06 que no figuran en §8. Sin cubrir aún: criterios 2, 3, 6, 7 (y 8, 10 fuera de alcance).
