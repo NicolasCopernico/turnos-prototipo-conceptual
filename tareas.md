@@ -194,6 +194,7 @@ F4 y F5 pueden avanzar en paralelo una vez cerrada la Fase 3, porque ambas consu
 - [x] B5.2 Suite de testing `pytest` (`tests/test_turnos.py`, `pytest.ini`): base SQLite temporal por test (nunca toca `turnos.db`), 5 escenarios obligatorios (camino feliz/INV-03, INV-02, INV-01 a 5 h y a 45 min, validación Pydantic). Documentados en spec §14.
 - [x] B5.3 Blindaje de casos de borde: textos vacíos o en blanco → `422 INVALID_REQUEST`; cancelar turno inexistente → `404 NOT_FOUND`; cancelar turno ya cancelado → `409 INVALID_STATE_TRANSITION`. Con tests (17 en total).
 - [x] B5.4 Refactorización de `main.py` sin cambiar rutas: secciones ordenadas, docstrings, nombres de funciones de dominio en español (`registrar_turno`, `registrar_cancelacion`, `validar_contacto`, ...) y descripciones, ejemplos y respuestas de error en Swagger UI (`/docs`).
+- [x] B5.6 Compatibilidad frontend ↔ backend: `tests/test_frontend.py` y `tests/frontend_harness.cjs` (contrato estático e integración con el código real del HTML en Node). Documentado en spec §14.1.
 - [x] B5.5 Demostración de detección de regresiones: invertir el signo de INV-01 hace fallar los tests de cancelación (revertido).
 
 **Hecho cuando:** `python -m pytest` pasa en verde en menos de 2 segundos.

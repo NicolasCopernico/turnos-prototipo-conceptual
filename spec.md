@@ -490,3 +490,14 @@ Suite `pytest` en `tests/test_turnos.py` (17 casos: escenarios 1 a 5 de la matri
 - Test 4: RN-04 exige 1 h de antelación mínima, por lo que un turno a 45 min no puede crearse por la API. El test crea el turno con anticipación suficiente y adelanta el reloj del servidor (`main.utcnow`) hasta 45 min antes del inicio.
 - Tests 1 a 3 usan horarios relativos a la hora actual y alineados a la grilla de 15 min (RN-04), así que no dependen de la fecha en que se ejecuten.
 - Correspondencia con §8: Test 1 ↔ criterio 9 (parcial: sin reinicio del backend), Test 2 ↔ criterio 1, Test 3 ↔ criterio 4, Test 4 ↔ criterios 5 y 11. Los Tests 6 a 8 cubren casos de borde de §11.2, §11.3 y RN-06 que no figuran en §8. Sin cubrir aún: criterios 2, 3, 6, 7 (y 8, 10 fuera de alcance).
+
+### 14.1 Compatibilidad Frontend ↔ Backend
+
+`tests/test_frontend.py` (31 casos en total con la suite anterior). Verifica que `prototipo-turnos.html` y la API se entienden.
+
+| Nivel | Qué valida |
+|---|---|
+| Contrato estático | El HTML usa el puerto del backend; solo llama a rutas que existen; lee de la respuesta únicamente campos de `TurnoOut`; envía exactamente los campos de `TurnoCreate` y `CancelarIn`; ids de usuarios y servicios idénticos a la semilla; conoce todos los códigos de error y sus status HTTP; CORS permite abrir el HTML desde otro origen (incluido `file://`); `GET /` sirve el HTML. |
+| Integración (`@integracion`) | `tests/frontend_harness.cjs` carga el código **real** del HTML en Node y ejecuta contra un uvicorn propio (base temporal, puerto libre): el primer y último slot de cada servicio que ofrece la UI son aceptados por el backend; reserva y relectura de la lista; errores 409/403/422/404 con su mensaje; cancelación, cancelación repetida e inexistente; backend caído → `API_NO_DISPONIBLE`. |
+
+Ejecución: `python -m pytest` (todo, ~3,5 s) o `python -m pytest -m "not integracion"` (~1,5 s, sin Node). Requiere Node.js para el nivel de integración; sin Node esas pruebas se omiten.
