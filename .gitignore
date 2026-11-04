@@ -1,0 +1,52 @@
+# Base de datos local (se crea al iniciar el servidor; datos de ejemplo con seed_demo.py)
+turnos.db
+turnos.db-journal
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+
+# Python: bytecode y cachés
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+ENV/
+
+# Cobertura de tests
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Empaquetado / build
+build/
+dist/
+*.egg-info/
+
+# Variables de entorno y secretos
+.env
+.env.*
+
+# Editores / IDE
+.idea/
+.vscode/
+*.swp
+
+# Archivos temporales del sistema operativo
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+$RECYCLE.BIN/
+*.tmp
+*~
