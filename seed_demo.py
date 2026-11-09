@@ -48,18 +48,18 @@ TURNOS = [
     (15, "c1", "s2", day(3, 15, 30), "CONFIRMADO", None, None),
 ]
 
-with main.write_tx() as conn:
+with main.transaccion_escritura() as conn:
     existing = conn.execute("SELECT COUNT(*) FROM turno").fetchone()[0]
     if existing and "--reset" not in sys.argv:
         sys.exit(f"Ya hay {existing} turnos. Usá --reset para reemplazarlos.")
     conn.execute("DELETE FROM turno")
-    created = main.fmt(now - timedelta(days=5))
+    created = main.formatear_instante(now - timedelta(days=5))
     for n, cliente, svc, inicio, estado, by, motivo in TURNOS:
         conn.execute(
             "INSERT INTO turno (id, cliente_id, profesional_id, servicio_id, inicio, fin, estado,"
             " motivo_cancelacion, cancelado_por_id, creado_en, actualizado_en) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-            (str(uuid.uuid5(uuid.NAMESPACE_DNS, f"turno-demo-{n}")), cliente, PROF[svc], svc, main.fmt(inicio),
-             main.fmt(inicio + timedelta(minutes=DURATION[svc])), estado, motivo, by, created, created),
+            (str(uuid.uuid5(uuid.NAMESPACE_DNS, f"turno-demo-{n}")), cliente, PROF[svc], svc, main.formatear_instante(inicio),
+             main.formatear_instante(inicio + timedelta(minutes=DURATION[svc])), estado, motivo, by, created, created),
         )
-        print(f"t{n:<2} {estado:<10} {cliente} {svc} {main.fmt(inicio)}")
+        print(f"t{n:<2} {estado:<10} {cliente} {svc} {main.formatear_instante(inicio)}")
 print(f"\n{len(TURNOS)} turnos cargados en {main.DB_PATH}")

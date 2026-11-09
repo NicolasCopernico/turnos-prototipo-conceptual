@@ -550,7 +550,7 @@ function BookingModal({ svc, inicio, onClose, onDone }) {
       const r = await act(Domain.bookAppointment, { actor: { id: other.id, role: 'CLIENTE' }, clienteId: other.id, servicioId: svc.id, inicio }, { silent: true });
       if (r.ok) toast('info', `${other.nombre} reservó este horario un instante antes que vos.`);
     }
-    const args = { actor, clienteId, servicioId: svc.id, inicio };
+    const args = { actor, clienteId: clientId, servicioId: svc.id, inicio };
     const r = await act(Domain.bookAppointment, args);
     if (sim.double && r.ok) await act(Domain.bookAppointment, args); // segundo envío: debe rechazarse
     setBusy(false);
