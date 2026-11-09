@@ -50,3 +50,6 @@ ehthumbs.db
 $RECYCLE.BIN/
 *.tmp
 *~
+
+# Dependencias de Node de las pruebas de navegador (tests/e2e)
+node_modules/

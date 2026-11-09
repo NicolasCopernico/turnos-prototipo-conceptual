@@ -1,113 +1,28 @@
 """Suite de pruebas automatizadas del backend (spec.md §14, «Matriz de Tests Automatizados»).
 
-Cómo se garantiza el aislamiento (nunca se toca `turnos.db`):
-  * cada test recibe su propia base SQLite en `tmp_path` (copia de una plantilla con la semilla; se redirige `main.DB_PATH`);
-  * la fixture `client` ejecuta el `lifespan` real de la app sobre esa base;
-  * `test_aislamiento_no_toca_turnos_db_real` lo comprueba de forma explícita.
+Las fixtures (`client`, `db_path`, `reloj`) están en `tests/conftest.py` y las utilidades en `tests/helpers.py`.
+Cada test usa su propia base SQLite temporal y un reloj inyectable: nunca se toca `turnos.db`.
 
-El reloj también está aislado: se reemplaza `main.utcnow` por un reloj controlable. Es necesario para el
-Test 4, porque RN-04 impide crear por API un turno con menos de 1 h de antelación: la única forma de llegar
-a «faltan 45 minutos» es crear el turno con tiempo y adelantar el reloj. Además evita falsos fallos por
-grilla de 15 min o cambio de día.
+El reloj es necesario para el Test 4, porque RN-04 impide crear por API un turno con menos de 1 h de
+antelación: la única forma de llegar a «faltan 45 minutos» es crear el turno con tiempo y adelantar el reloj.
+Además evita falsos fallos por grilla de 15 min o cambio de día.
 
-Ejecutar:  pytest -q        (la suite completa corre en menos de 2 segundos)
+Ejecutar:  pytest -q
 """
+
 from __future__ import annotations
 
-import shutil
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
 import main
-
-REAL_DB = main.DB_PATH  # ruta de la base real, capturada antes de que cualquier fixture la redirija
-
-# Instante fijo y alineado a la grilla de 15 min. «Mañana» = AHORA + 1 día.
-AHORA = datetime(2026, 11, 9, 12, 0, 0, tzinfo=timezone.utc)
-
-# Ids de la semilla de main.py: c1 y c3 son clientes con contacto válido y email verificado;
-# s1 es «Consulta general» (30 min) de la profesional p1.
-CLIENTE_1, CLIENTE_3, SERVICIO_1, PROFESIONAL_1 = "c1", "c3", "s1", "p1"
-
-
-# ----------------------------------------------------------------------------
-# Fixtures
-# ----------------------------------------------------------------------------
-class Reloj:
-    """Reloj inyectable: reemplaza a `main.utcnow` durante el test."""
-
-    def __init__(self, ahora: datetime) -> None:
-        self.ahora = ahora
-
-    def __call__(self) -> datetime:
-        return self.ahora
-
-
-@pytest.fixture
-def reloj(monkeypatch: pytest.MonkeyPatch) -> Reloj:
-    r = Reloj(AHORA)
-    monkeypatch.setattr(main, "utcnow", r)
-    return r
-
-
-@pytest.fixture(scope="session")
-def plantilla_db(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Base temporal con esquema y semilla, creada UNA vez (con `main.init_db()`, el mismo código de producción).
-
-    Solo se usa como molde: cada test trabaja sobre su propia copia. Evita repetir las escrituras de la semilla
-    (con fsync) en cada test y es lo que mantiene la suite por debajo de los 2 segundos.
-    """
-    ruta = tmp_path_factory.mktemp("plantilla") / "plantilla.db"
-    assert ruta != REAL_DB
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(main, "DB_PATH", ruta)
-        main.init_db()
-    return ruta
-
-
-@pytest.fixture
-def db_path(plantilla_db: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Base SQLite propia de cada test: copia limpia de la plantilla, en `tmp_path`.
-
-    `connect()` lee `main.DB_PATH` en cada llamada, así que alcanza con redirigirla.
-    """
-    ruta = tmp_path / "turnos_test.db"
-    assert ruta != REAL_DB
-    shutil.copyfile(plantilla_db, ruta)
-    monkeypatch.setattr(main, "DB_PATH", ruta)
-    return ruta
-
-
-@pytest.fixture
-def client(db_path: Path, reloj: Reloj) -> Iterator[TestClient]:
-    with TestClient(main.app) as c:  # el lifespan de la app crea esquema y semilla en `db_path`
-        yield c
-
-
-# ----------------------------------------------------------------------------
-# Helpers
-# ----------------------------------------------------------------------------
-def iso(dt: datetime) -> str:
-    return dt.strftime(main.TS_FORMAT)
-
-
-def reservar(client: TestClient, cliente_id: str, inicio: datetime, servicio_id: str = SERVICIO_1) -> Any:
-    return client.post("/api/turnos", json={"cliente_id": cliente_id, "servicio_id": servicio_id, "inicio": iso(inicio)})
-
-
-def cancelar(client: TestClient, turno_id: str, actor_id: str, **extra: str) -> Any:
-    return client.post(f"/api/turnos/{turno_id}/cancelar", json={"cancelado_por_id": actor_id, **extra})
-
-
-def listar(client: TestClient, **filtros: str) -> list[dict[str, Any]]:
-    r = client.get("/api/turnos", params=filtros)
-    assert r.status_code == 200
-    return list(r.json())
+from helpers import (AHORA, CLIENTE_1, CLIENTE_3, PROFESIONAL_1, REAL_DB, SERVICIO_1, Reloj, cancelar, iso,
+                     listar, reservar)
 
 
 # ----------------------------------------------------------------------------

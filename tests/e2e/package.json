@@ -1,0 +1,8 @@
+{
+  "name": "turnos-e2e",
+  "private": true,
+  "description": "Recorrido del frontend en un navegador real contra el backend (opcional; ver tests/test_e2e_navegador.py)",
+  "dependencies": {
+    "puppeteer-core": "^24.0.0"
+  }
+}

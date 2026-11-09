@@ -185,7 +185,7 @@ F4 y F5 pueden avanzar en paralelo una vez cerrada la Fase 3, porque ambas consu
 
 ## Fase B4 — Frontend conectado
 
-- [x] B4.1 `prototipo-turnos.html` consume la API con `fetch` (plan §2): `cargarTurnos()` (GET), reserva (POST) y cancelación (POST `/cancelar`); errores 409 mostrados con el motivo del backend. _(Verificado: tras F5 los turnos persisten.)_
+- [x] B4.1 `prototipo-turnos.html` consume la API con `fetch` (plan §2): `cargarTurnos()` (GET), reserva (POST) y cancelación (POST `/cancelar`); errores 409 mostrados con el motivo del backend. _(Tras F5 los turnos persisten. Reservar desde la UI fallaba con `clienteId is not defined`: corregido y verificado en un navegador real en B5.6.)_
 - [ ] B4.2 Pendiente (en el frontend esas acciones responden `BACKEND_PENDIENTE`: completar, ausente, cancelar por bloqueo): endpoints de la vista Administrador (requiere ampliar el spec).
 
 ## Fase B5 — Entorno, pruebas automatizadas y refactorización
@@ -194,5 +194,7 @@ F4 y F5 pueden avanzar en paralelo una vez cerrada la Fase 3, porque ambas consu
 - [x] B5.2 Suite `pytest` en `tests/test_turnos.py`, con base SQLite temporal y reloj inyectable (nunca toca `turnos.db`): camino feliz e INV-03, INV-02, INV-01 (cancelación exitosa y tardía) y validación de Pydantic (spec §14, escenarios 1 a 5). _(Se verificó que los tests detectan una regresión: al romper INV-01 falla el test 4.)_
 - [x] B5.3 Casos de borde: textos vacíos o solo espacios (`422`), cancelar un turno inexistente (`404`) y cancelar un turno ya cancelado (`409`) (spec §14, escenarios 6 a 8). _(38 tests en total, unos 2 s.)_
 - [x] B5.4 Refactorización de `main.py`: secciones ordenadas, nombres de funciones en español, docstrings y descripciones de Swagger (`/docs`) en los 3 endpoints. _(Sin cambiar rutas ni respuestas: se comparó con la versión anterior, 20 respuestas idénticas.)_
+- [x] B5.5 Compatibilidad frontend ↔ backend: tests de contrato entre `prototipo-turnos.html` y la API (rutas, campos, datos de ejemplo, reglas, códigos de error, CORS, ruta `/` y `seed_demo.py`) (spec §14, escenarios 9 a 14). _(16 tests; la suite completa tiene 54.)_
+- [x] B5.6 Recorrido del frontend en Chrome real contra el backend (spec §14, escenario 15; opcional con `pytest -m e2e`). _(27 comprobaciones. Detectó y permitió corregir `clienteId is not defined` al reservar, y que la refactorización había roto `seed_demo.py`.)_
 
 **Hecho cuando:** `pytest -q` da todo en verde y `/docs` documenta los 3 endpoints con sus errores.
