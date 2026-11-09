@@ -2,10 +2,10 @@
 
 | Campo | Valor |
 |---|---|
-| Versión | 0.2.1 (MVP · Fase 2: arquitectura desacoplada) |
+| Versión | 0.2.2 (MVP · Fase 2: arquitectura desacoplada) |
 | Estado | Borrador para revisión |
 | Metodología | Spec-Driven Development (SDD) |
-| Fecha | 2026-10-27 |
+| Fecha | 2026-11-09 |
 | Cambios respecto de 0.1.0 | Ver §11 (Historial de cambios) |
 
 > Este documento es el **contrato del sistema**. Todo código, test y decisión de diseño debe poder trazarse a una sección de este archivo. Si el código y la spec divergen, se corrige primero la spec y luego el código.
@@ -423,6 +423,7 @@ Los datos provienen siempre de la base (INV-03), nunca de caché en memoria del 
 | `409 SLOT_UNAVAILABLE` | Solapamiento con otro turno `CONFIRMADO` del profesional o del cliente (INV-02) |
 | `422 INVALID_TIME_RANGE` | `inicio` no futuro, sin la antelación mínima, fuera de grilla o del horizonte (RN-04) |
 | `422 INVALID_CONTACT` / `403 EMAIL_NOT_VERIFIED` | Datos de contacto del cliente inválidos o email sin verificar (RN-03) |
+| `422 INVALID_REQUEST` | Cuerpo mal formado: campo faltante o de tipo inválido, o `cliente_id` / `servicio_id` vacíos o compuestos solo por espacios |
 | `404 NOT_FOUND` | `cliente_id` o `servicio_id` inexistente |
 
 La validación y la inserción ocurren en una única transacción (INV-03).
@@ -438,6 +439,7 @@ La validación y la inserción ocurren en una única transacción (INV-03).
 | `409 CANCELLATION_WINDOW_EXPIRED` | El actor es `CLIENTE` y faltan menos de 2 h para `inicio` (INV-01) |
 | `409 INVALID_STATE_TRANSITION` | El turno no está `CONFIRMADO` (RN-06) |
 | `404 NOT_FOUND` | Turno inexistente |
+| `422 INVALID_REQUEST` | Cuerpo mal formado, `cancelado_por_id` vacío o solo espacios, o falta `motivo_cancelacion` cuando el actor es `PROFESIONAL`/`ADMIN` |
 
 `PROFESIONAL`/`ADMIN` pueden cancelar fuera de ventana con motivo (excepción de INV-01). El turno nunca se elimina físicamente (RN-06).
 
@@ -462,6 +464,7 @@ La validación y la inserción ocurren en una única transacción (INV-03).
 | Versión | Fecha | Cambios |
 |---|---|---|
 | 0.1.0 | 2026-10-26 | Versión inicial del MVP. |
+| 0.2.2 | 2026-11-09 | Casos de borde del contrato: `INVALID_REQUEST` también para identificadores vacíos o compuestos solo por espacios (§11.2, §11.3). Nueva §14 «Matriz de Tests Automatizados». |
 | 0.2.1 | 2026-10-27 | Se agrega `INVALID_REQUEST` (422) al catálogo §7 y se usa en §11.1. |
 | 0.2.0 | 2026-10-27 | Alias `INV-01`/`INV-02` (texto inmutable); nueva `INV-03` (persistencia real); contrato REST de `/api/turnos` (§11); directiva de abstención (§12); decisiones D-04 (resuelta para Fase 2) y D-06; criterios de aceptación 9 a 11. |
 
@@ -480,9 +483,12 @@ Suite `pytest` en `tests/test_turnos.py`, ejecutable con `pytest -q`. Valida las
 | 3 | Cancelación en ventana | INV-01 (RN-01); criterio 4 | Turno que inicia en 5 h; el cliente lo cancela | `200`, `estado = CANCELADO`, `cancelado_por_id` del actor; el cambio persiste y el slot queda libre | `test_3_inv01_cancelacion_exitosa_con_5_horas_de_anticipacion` |
 | 4 | Cancelación tardía | INV-01 (RN-01); criterios 5 y 11 | El cliente cancela cuando faltan 45 min, 1 h 59 min y exactamente 2 h | 45 min y 1 h 59 min: `409 CANCELLATION_WINDOW_EXPIRED` y el turno sigue `CONFIRMADO`. 2 h exactas: `200` (el bloqueo rige para «menos de 2 horas») | `test_4_inv01_cancelacion_tardia_rechazada` |
 | 5 | Validación de esquema | §11, `INVALID_REQUEST` (§7) | `POST` con cuerpo vacío, campos faltantes, tipos inválidos, fecha ilegible, `inicio` nulo, JSON malformado; también en `/cancelar` | `422 INVALID_REQUEST`; no se persiste nada | `test_5_pydantic_rechaza_cuerpos_invalidos`, `test_5_pydantic_rechaza_json_malformado` |
+| 6 | Textos vacíos o solo espacios | §11.2 y §11.3, `INVALID_REQUEST` (§7) | `POST /api/turnos` con `cliente_id` o `servicio_id` igual a `""`, `" "`, `"\t"`, `"\n"` o combinaciones; `POST /cancelar` con `cancelado_por_id` vacío | `422 INVALID_REQUEST` que nombra el campo; no se persiste nada y el turno no cambia | `test_6_crear_turno_rechaza_textos_vacios_o_solo_espacios`, `test_6_cancelar_rechaza_actor_vacio_o_solo_espacios` |
+| 7 | Cancelar un turno inexistente | §11.3, `NOT_FOUND` (§7) | `POST /api/turnos/{id}/cancelar` con un id que no existe (texto libre, UUID, `0`) | `404 NOT_FOUND` | `test_7_cancelar_turno_inexistente_devuelve_404` |
+| 8 | Cancelar un turno ya cancelado | RN-06 (estado terminal), §11.3 | Cancelar dos veces el mismo turno: el mismo cliente, o el administrador con motivo | La 2.ª cancelación da `409 INVALID_STATE_TRANSITION`; el registro queda exactamente como tras la 1.ª (incluido `actualizado_en`) | `test_8_cancelar_turno_ya_cancelado_se_rechaza` |
 
 **Notas**
 
 - **Test 4 y la antelación mínima.** La RN-04 impide crear por API un turno con menos de 1 h de antelación, así que «un turno a 45 minutos» no se puede reservar directamente. El test crea el turno con tiempo y adelanta el reloj inyectable hasta que falten 45 minutos.
 - **Códigos HTTP.** Los tests exigen el código exacto del catálogo de la §7 (`409` y `422`), no un rango como `400/409`.
-- **Fuera de esta matriz.** RN-03, RN-04 (resto de sus validaciones), RN-06 (estados terminales), RBAC-02 y la concurrencia (criterio 2) todavía no tienen test automatizado.
+- **Fuera de esta matriz.** RN-03, RN-04 (resto de sus validaciones), RN-06 (salvo que un turno CANCELADO no se cancela de nuevo), RBAC-02 y la concurrencia (criterio 2) todavía no tienen test automatizado.

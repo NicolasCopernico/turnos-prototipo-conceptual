@@ -265,3 +265,62 @@ def test_5_pydantic_rechaza_json_malformado(client: TestClient) -> None:
 
     assert r.status_code == 422
     assert r.json()["error"] == "INVALID_REQUEST"
+
+
+# ----------------------------------------------------------------------------
+# Casos de borde (blindaje de endpoints)
+# ----------------------------------------------------------------------------
+# Test 6 — Textos vacíos o compuestos solo por espacios
+@pytest.mark.parametrize("vacio", ["", " ", "     ", "\t", "\n", " \t \n "], ids=repr)
+@pytest.mark.parametrize("campo", ["cliente_id", "servicio_id"])
+def test_6_crear_turno_rechaza_textos_vacios_o_solo_espacios(client: TestClient, campo: str, vacio: str) -> None:
+    cuerpo = {**VALIDO, campo: vacio}
+
+    r = client.post("/api/turnos", json=cuerpo)
+
+    assert r.status_code == 422
+    assert r.json()["error"] == "INVALID_REQUEST"
+    assert campo in r.json()["detalle"]  # el mensaje dice qué campo está mal
+    assert listar(client) == []  # no se persiste nada (INV-03)
+
+
+@pytest.mark.parametrize("vacio", ["", "   ", "\t\n"], ids=repr)
+def test_6_cancelar_rechaza_actor_vacio_o_solo_espacios(client: TestClient, vacio: str) -> None:
+    turno = reservar(client, CLIENTE_1, AHORA + timedelta(hours=5)).json()
+
+    r = cancelar(client, turno["id"], vacio)
+
+    assert r.status_code == 422
+    assert r.json()["error"] == "INVALID_REQUEST"
+    assert [t["estado"] for t in listar(client)] == ["CONFIRMADO"]  # el turno no se tocó
+
+
+# Test 7 — Cancelar un turno inexistente
+@pytest.mark.parametrize("turno_id", ["no-existe", "3f2b8c1e-9d4a-4e6b-8a57-0c1d2e3f4a5b", "0"], ids=["texto", "uuid", "cero"])
+def test_7_cancelar_turno_inexistente_devuelve_404(client: TestClient, turno_id: str) -> None:
+    r = cancelar(client, turno_id, CLIENTE_1)
+
+    assert r.status_code == 404
+    assert r.json()["error"] == "NOT_FOUND"
+    assert listar(client) == []
+
+
+# Test 8 — Cancelar un turno que ya estaba cancelado (RN-06: CANCELADO es terminal)
+@pytest.mark.parametrize(
+    ("segundo_actor", "extra"),
+    [
+        pytest.param(CLIENTE_1, {}, id="el-mismo-cliente"),
+        pytest.param("admin", {"motivo_cancelacion": "Duplicado"}, id="el-administrador-con-motivo"),
+    ],
+)
+def test_8_cancelar_turno_ya_cancelado_se_rechaza(client: TestClient, reloj: Reloj, segundo_actor: str, extra: dict[str, str]) -> None:
+    turno = reservar(client, CLIENTE_1, AHORA + timedelta(hours=5)).json()
+    primera = cancelar(client, turno["id"], CLIENTE_1)
+    assert primera.status_code == 200
+
+    reloj.ahora += timedelta(minutes=10)  # si el 2.º intento escribiera algo, `actualizado_en` cambiaría
+    segunda = cancelar(client, turno["id"], segundo_actor, **extra)
+
+    assert segunda.status_code == 409
+    assert segunda.json()["error"] == "INVALID_STATE_TRANSITION"
+    assert listar(client) == [primera.json()]  # el registro quedó exactamente como tras la 1.ª cancelación

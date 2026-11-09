@@ -157,7 +157,7 @@ F4 y F5 pueden avanzar en paralelo una vez cerrada la Fase 3, porque ambas consu
 
 # Bloque B — Fase 2 del curso: backend desacoplado (plan.md v2)
 
-> Las fases 0 a 8 de arriba corresponden al prototipo en memoria (Fase 1 del curso). Este bloque ejecuta [plan.md](plan.md) v2 sobre [spec.md](spec.md) v0.2.1. Fuente de verdad: el spec (esquema de la §4, errores de la §7, contrato de la §11).
+> Las fases 0 a 8 de arriba corresponden al prototipo en memoria (Fase 1 del curso). Este bloque ejecuta [plan.md](plan.md) v2 sobre [spec.md](spec.md) v0.2.2. Fuente de verdad: el spec (esquema de la §4, errores de la §7, contrato de la §11).
 
 ## Fase B1 — Esquema y semilla (SQLite)
 
@@ -187,3 +187,12 @@ F4 y F5 pueden avanzar en paralelo una vez cerrada la Fase 3, porque ambas consu
 
 - [x] B4.1 `prototipo-turnos.html` consume la API con `fetch` (plan §2): `cargarTurnos()` (GET), reserva (POST) y cancelación (POST `/cancelar`); errores 409 mostrados con el motivo del backend. _(Verificado: tras F5 los turnos persisten.)_
 - [ ] B4.2 Pendiente (en el frontend esas acciones responden `BACKEND_PENDIENTE`: completar, ausente, cancelar por bloqueo): endpoints de la vista Administrador (requiere ampliar el spec).
+
+## Fase B5 — Entorno, pruebas automatizadas y refactorización
+
+- [x] B5.1 Entorno virtual `.venv` con las dependencias de `requirements.txt` (`fastapi`, `uvicorn`, `pydantic`, `pytest`, `httpx`). `pip check` sin conflictos y `.venv/` excluido en el `.gitignore`.
+- [x] B5.2 Suite `pytest` en `tests/test_turnos.py`, con base SQLite temporal y reloj inyectable (nunca toca `turnos.db`): camino feliz e INV-03, INV-02, INV-01 (cancelación exitosa y tardía) y validación de Pydantic (spec §14, escenarios 1 a 5). _(Se verificó que los tests detectan una regresión: al romper INV-01 falla el test 4.)_
+- [x] B5.3 Casos de borde: textos vacíos o solo espacios (`422`), cancelar un turno inexistente (`404`) y cancelar un turno ya cancelado (`409`) (spec §14, escenarios 6 a 8). _(38 tests en total, unos 2 s.)_
+- [x] B5.4 Refactorización de `main.py`: secciones ordenadas, nombres de funciones en español, docstrings y descripciones de Swagger (`/docs`) en los 3 endpoints. _(Sin cambiar rutas ni respuestas: se comparó con la versión anterior, 20 respuestas idénticas.)_
+
+**Hecho cuando:** `pytest -q` da todo en verde y `/docs` documenta los 3 endpoints con sus errores.
