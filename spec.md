@@ -464,3 +464,25 @@ La validación y la inserción ocurren en una única transacción (INV-03).
 | 0.1.0 | 2026-10-26 | Versión inicial del MVP. |
 | 0.2.1 | 2026-10-27 | Se agrega `INVALID_REQUEST` (422) al catálogo §7 y se usa en §11.1. |
 | 0.2.0 | 2026-10-27 | Alias `INV-01`/`INV-02` (texto inmutable); nueva `INV-03` (persistencia real); contrato REST de `/api/turnos` (§11); directiva de abstención (§12); decisiones D-04 (resuelta para Fase 2) y D-06; criterios de aceptación 9 a 11. |
+
+---
+
+## 14. Matriz de Tests Automatizados
+
+Suite `pytest` en `tests/test_turnos.py`, ejecutable con `pytest -q`. Valida las reglas de la §3 contra el contrato de la §11 usando la API real (`TestClient`) y no depende de ningún servidor levantado.
+
+**Aislamiento.** Cada test usa su propia base SQLite en un directorio temporal (copia de una plantilla con la semilla de `main.py`) y un reloj inyectable que reemplaza a `utcnow()`. Ningún test lee ni escribe `turnos.db`; `test_aislamiento_no_toca_turnos_db_real` lo verifica. Los instantes parten de `2026-11-09T12:00:00Z`, por lo que los resultados no dependen de la hora de ejecución.
+
+| # | Escenario | Regla / criterio | Entrada | Resultado esperado | Test (`tests/test_turnos.py`) |
+|---|---|---|---|---|---|
+| 1 | Camino feliz | INV-03, §11.2, §11.1; criterio 9 | `POST /api/turnos` de `c1` con `s1` para mañana; luego `GET /api/turnos` | `201`, `estado = CONFIRMADO`, `fin = inicio + 30 min`; el turno aparece al listar, está en la base y sigue ahí tras reiniciar la app | `test_1_camino_feliz_crear_turno_y_listarlo` |
+| 2 | No solapamiento | INV-02 (RN-02); criterios 1 y 3 | Con un turno `CONFIRMADO` de `p1`, otro cliente reserva con `p1`: mismo horario, +15 min (solapado) y +30 min (contiguo) | Mismo horario y solapado: `409 SLOT_UNAVAILABLE` y no se persiste nada. Contiguo: `201` | `test_2_inv02_no_solapamiento_del_profesional` |
+| 3 | Cancelación en ventana | INV-01 (RN-01); criterio 4 | Turno que inicia en 5 h; el cliente lo cancela | `200`, `estado = CANCELADO`, `cancelado_por_id` del actor; el cambio persiste y el slot queda libre | `test_3_inv01_cancelacion_exitosa_con_5_horas_de_anticipacion` |
+| 4 | Cancelación tardía | INV-01 (RN-01); criterios 5 y 11 | El cliente cancela cuando faltan 45 min, 1 h 59 min y exactamente 2 h | 45 min y 1 h 59 min: `409 CANCELLATION_WINDOW_EXPIRED` y el turno sigue `CONFIRMADO`. 2 h exactas: `200` (el bloqueo rige para «menos de 2 horas») | `test_4_inv01_cancelacion_tardia_rechazada` |
+| 5 | Validación de esquema | §11, `INVALID_REQUEST` (§7) | `POST` con cuerpo vacío, campos faltantes, tipos inválidos, fecha ilegible, `inicio` nulo, JSON malformado; también en `/cancelar` | `422 INVALID_REQUEST`; no se persiste nada | `test_5_pydantic_rechaza_cuerpos_invalidos`, `test_5_pydantic_rechaza_json_malformado` |
+
+**Notas**
+
+- **Test 4 y la antelación mínima.** La RN-04 impide crear por API un turno con menos de 1 h de antelación, así que «un turno a 45 minutos» no se puede reservar directamente. El test crea el turno con tiempo y adelanta el reloj inyectable hasta que falten 45 minutos.
+- **Códigos HTTP.** Los tests exigen el código exacto del catálogo de la §7 (`409` y `422`), no un rango como `400/409`.
+- **Fuera de esta matriz.** RN-03, RN-04 (resto de sus validaciones), RN-06 (estados terminales), RBAC-02 y la concurrencia (criterio 2) todavía no tienen test automatizado.
